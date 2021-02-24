@@ -1,0 +1,42 @@
+name: Publish to GCR
+
+on:
+  push:
+    branches:
+      - "master"
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: build
+        run: docker build .
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Setup gcloud CLI
+        uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+        with:
+          version: '290.0.1'
+          service_account_key: ${{ secrets.GCR_SA_KEY }}
+          project_id: ${{ secrets.GCR_PROJECT }}
+      - name: Authenticate Docker
+        run: |-
+          gcloud auth configure-docker us-west1-docker.pkg.dev
+      - name: Build
+        run: docker build . -t "gcr.io/${{ secrets.GCR_PROJECT }}/${{ secrets.GCR_SERVICE }}:$GITHUB_SHA"
+      - name: Push to Google Container Registry
+        run: docker push "gcr.io/${{ secrets.GCR_PROJECT }}/${{ secrets.GCR_SERVICE }}:$GITHUB_SHA"
+      # Deploy image to Cloud Run
+      - name: Deploy GCR
+        run: |-
+          gcloud run deploy "${{ secrets.GCR_SERVICE }}" \
+            --quiet \
+            --region "${{ secrets.GCR_REGION }}" \
+            --image "gcr.io/${{ secrets.GCR_PROJECT }}/${{ secrets.GCR_SERVICE }}:$GITHUB_SHA" \
+            --platform "managed" \
+            --allow-unauthenticated
